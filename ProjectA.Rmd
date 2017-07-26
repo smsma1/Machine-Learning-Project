@@ -1,0 +1,138 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Asmaa Altanany"
+date: "26 ÌÊ·ÌÊ° 2017"
+output: html_document
+---
+
+#Overview
+##What you should submit
+‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+#Reproducibility
+‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹
+
+Due to security concerns with the exchange of R code, your code will not be run during the evaluation by your classmates. Please be sure that if they download the repo, they will be able to view the compiled HTML version of your analysis.
+
+#Backgrund
+‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement ñ a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website[click here]( http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).
+
+#Data
+‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹
+
+The training data for this project are available here:
+[1]:(https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+The test data are available here:
+[2]:(https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+#loading required Libraries
+
+```{r}
+library(caret)
+library(rpart) 
+library(dplyr)
+library(ggplot2)
+library(lattice)
+library(rpart.plot)
+library(RColorBrewer)
+library(randomForest)
+library(reshape2)
+library(plyr)
+
+```
+
+#loading  and reading the data:-
+‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹
+
+```{r}
+trainingSet<- read.csv("pml-training.csv", na.strings=c("NA","#DIV/0!", ""))
+
+testingSet<- read.csv('pml-testing.csv', na.strings=c("NA","#DIV/0!", ""))
+
+head(trainingSet)
+head(testingSet)
+dim(trainingSet)
+dim(testingSet)
+
+```
+
+#cleaning  data...
+cacating data sets together then we found many raws with "NA" sowe will removing them and conveting timestamp format and cleaning data sets.
+
+```{r}
+Tr_y <- trainingSet[, 1:159]; Te_X <- testingSet[, 1:159]
+Tr_Te <- rbind(Tr_y ,Te_X)
+
+# Removeing rows with NA 
+list_na <- sapply(Tr_Te, function(x) sum(is.na(x)))
+Tr_Te <- Tr_Te[, list_na == 0]
+
+# Converting time stamp
+Tr_Te$hour_of_day <- strftime(as.POSIXct(Tr_Te$raw_timestamp_part_1, origin = "1970-01-01", tz = "GMT"),format = "%H")
+Tr_Te$hour_of_day <- as.numeric(Tr_Te$hour_of_day)
+
+Tr_Te <- Tr_Te[, -c(1, 3:5, 7)]
+```
+
+#Partioning the training set into two data set to perform cross-validation
+
+
+```{r}
+sub_s <- createDataPartition(y=trainingSet$classe, p=0.75, list=FALSE)
+sub_Training <- trainingSet[sub_s, ] 
+sub_Testing <- trainingSet[-sub_s, ]
+dim(sub_Training)
+dim(sub_Testing)
+head(sub_Training)
+head(sub_Testing)
+```
+
+#Prediction 1 (random Forest)
+‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹
+
+random Forest model that will give us  about 99.9% accuracy..
+
+
+```{r}
+set.seed(123)
+D_train <- cbind(Tr_Te [1:dim(trainingSet)[1], ], trainingSet[, 160])
+names(D_train)[dim(D_train)[2]] <- 'classe'
+inTrain <- createDataPartition(y = D_train$classe, p = 0.7, list = F)
+training <- D_train[inTrain, ]; testing <- D_train[-inTrain,]
+
+RF_model = randomForest(classe ~ ., data = training, ntree=500)
+DT_model = rpart(classe ~ ., data = training)
+
+
+pred <- predict(RF_model, testing)
+DE<- data.frame(y = testing$classe, pred = pred)
+DE$equal <- 0
+for (i in 1:dim(DE)[1]){
+        if (DE$y[i] == DE$pred[i]){
+                DE$equal[i] <- 1
+        } else { DE$equal[i] <- 0 }
+}
+
+sum(DE$equal)/length(DE$equal)
+#Better random forest accuracy with  100%
+es <- Tr_Te[(1+dim(D_train)[1]):dim(Tr_Te)[1], ]
+predict(RF_model, es)
+```
+
+#prediction 2 (Decision Tree)
+‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹‹
+```{r}
+DT_model <- rpart(classe ~ ., data=sub_Training, method="class")
+prediction_2 <- predict(DT_model , sub_Testing, type = "class")
+# Ploting the Decision Tree
+rpart.plot(DT_model, main="Classification Tree", extra=102, under=TRUE, faclen=0)
+```
+
+#Summary
+According to our predictions.the best prediction is the random forest ,itis more accuracy than decision tree,so it is overfitting. 
+
